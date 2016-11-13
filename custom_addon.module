@@ -1,0 +1,109 @@
+<?php
+
+/**
+ * Implementation of hook_form_FORM_ID_alter().
+ */
+
+function custom_addon_form_commerce_cart_add_to_cart_form_alter(&$form, &$form_state) {
+  if (in_array('commerce_pado_add_to_cart_submit', $form['#submit'])) {
+    $form['#submit'][] = 'custom_addon_add_to_cart_submit';
+  }
+  if (!empty($form_state['default_product'])) {
+    $product = $form_state['default_product'];
+    if(isset($product->field_addon['und'])){
+      $addon_items = $product->field_addon['und'];
+      foreach ($addon_items as $key => $value) {
+        $addon_product = commerce_product_load($value['target_id']);
+        $addon_products_sku[] = $addon_product->sku;
+      }
+    }
+    if (isset($product->field_autoaddon['und'])){
+      $auto_addon_items = $product->field_autoaddon['und'];
+      foreach ($auto_addon_items as $key => $value) {
+        $auto_addon_products_sku[] = $value['value'];
+      }
+    }
+    if(!empty($auto_addon_products_sku) && !empty($addon_products_sku)){
+      foreach($auto_addon_products_sku as $key => $value1) {
+        if(in_array($value1, $addon_products_sku)){
+          $form[$value1]['#default_value'] = TRUE;
+          $form[$value1]['#disabled'] = TRUE;
+        }
+      }
+    }
+  }
+}
+
+/*
+ * Submit handler added to the add to cart form for commerce_pado.
+ */
+
+function custom_addon_add_to_cart_submit($form, &$form_state) {
+
+  $commerce_pado_products = $form_state['commerce_pado_products'];
+  $quantity = $form_state['values']['quantity'];
+  $product = commerce_product_load($form_state['default_product_id']);
+  if (isset($product->field_autoaddon['und'])){
+    $auto_addon_items = $product->field_autoaddon['und'];
+    $auto_addon_products_sku = array();
+    foreach ($auto_addon_items as $key => $value) {
+      $auto_addon_products_sku[] = $value['value'];
+    }
+  }
+  foreach($commerce_pado_products as $product_add_on) {
+    // If the product was checked in the add to cart form...
+    if(!empty($form_state['line_item']) && $form_state['line_item']->quantity <=1){
+      if($form_state['values'][$product_add_on->sku] == 1) {
+        // Trigger the rule event
+        rules_invoke_event('custom_addon_add_to_cart', $product_add_on, $quantity);
+      }
+    }else{
+      if($form_state['values'][$product_add_on->sku] == 1 && !in_array($product_add_on->sku, $auto_addon_products_sku)) {
+        // Trigger the rule event
+        rules_invoke_event('custom_addon_add_to_cart', $product_add_on, $quantity);
+      }
+    }
+  }
+}
+
+function custom_addon_form_alter(&$form, &$form_state, $form_id){
+  
+  if (strpos($form_id, 'views_form_commerce_cart_form_') === 0) {
+    if(!empty($form_state['line_items'])){
+      $product_line_items = array();
+      $add_on_line_items = array();
+      foreach ($form_state['line_items'] as $key => $line_item) {
+        $id = $line_item->commerce_product['und'][0]['product_id'];
+        $product = commerce_product_load($id);
+        if ($product->type != 'add_on') {
+          if(!empty($product->field_autoaddon['und'])){
+            foreach ($product->field_autoaddon['und'] as $key => $value) {
+              $skus[] = $value['value'];
+            }
+          }
+          $product_line_items[] = $line_item;
+        }
+      }
+    }
+    if (!empty($form['edit_delete'])) {
+      foreach (element_children($form['edit_delete']) as $key) {
+        // Load and wrap the line item to have the title in the submit phase.
+        $line_item = commerce_line_item_load($form['edit_delete'][$key]['#line_item_id']);
+        if (!empty($form['edit_delete'][$key]['#line_item_id']) && in_array($line_item->line_item_label, $skus)){
+          $form['edit_delete'][$key]['#disabled'] = TRUE;
+        }
+      }
+    }
+    if (!empty($form['edit_quantity'])) {
+      foreach (element_children($form['edit_quantity']) as $key) {
+        // Load and wrap the line item to have the title in the submit phase.
+        if(is_numeric($key)){
+          $line_item = commerce_line_item_load($form['edit_quantity'][$key]['#line_item_id']);
+          if (!empty($form['edit_quantity'][$key]['#line_item_id']) && in_array($line_item->line_item_label, $skus)) {
+              $form['edit_quantity'][$key]['#disabled'] = TRUE;
+          }
+        }
+      }
+    }
+  }
+}

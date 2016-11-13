@@ -1,0 +1,5 @@
+name = Custom Add-on
+description = Custom Add-on Module
+core = 7.x
+package = Commerce (custom)
+dependencies[] = commerce_pado
